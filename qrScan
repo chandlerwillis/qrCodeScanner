@@ -1,18 +1,47 @@
 import imaplib
 import email
-import time
-import os
+import requests
+import bs4
 from pyzbar.pyzbar import decode
-from PIL import Image
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.image import MIMEImage
 
 # Gmail IMAP configuration
 IMAP_SERVER = 'imap.gmail.com'
 EMAIL = 'your_email@gmail.com'
 PASSWORD = 'your_password'
+
+# QR Code detection function
+def detect_qr_code(html_content):
+    # Parse the HTML content using BeautifulSoup
+    soup = bs4.BeautifulSoup(html_content, 'html.parser')
+    
+    # Find all the <img> tags in the HTML
+    img_tags = soup.find_all('img')
+    
+    # Iterate through <img> tags and try to decode QR codes
+    for img_tag in img_tags:
+        img_src = img_tag.get('src', '')
+        img_data = img_tag.get('alt', '')
+        
+        # Check if the image source or alt text contains a QR code
+        if 'data:image/png;base64' in img_src and img_data:
+            qr_code_data = decode([img_data])
+            if qr_code_data:
+                return "QR code found!"
+    
+    return "None"
+
+# Extract HTML content from links function
+def extract_html_from_links(links):
+    for link in links:
+        try:
+            # Fetch the HTML content of the linked webpage
+            response = requests.get(link)
+            if response.status_code == 200:
+                html_content = response.text
+                return html_content
+        except Exception as e:
+            print("Error:", e)
+    return None
 
 # Connect to Gmail
 mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -33,32 +62,26 @@ while True:
                 msg = email.message_from_bytes(raw_email)
                 
                 # Check for text content and extract links
-                links = []
                 if msg.is_multipart():
                     for part in msg.walk():
                         if part.get_content_type() == "text/plain":
                             text = part.get_payload(decode=True).decode('utf-8')
-                            # Implement code to extract links from 'text' and add them to 'links' list
+                            # Implement code to extract links from 'text'
+                            links = []  # Placeholder for extracted links
+                            # Extract links from 'text' and add them to 'links' list
 
-                # Check for attachments
-                for part in msg.iter_attachments():
-                    filename = part.get_filename()
-                    content_type = part.get_content_type()
-                    
-                    # Download attachments
-                    if filename:
-                        # Implement code to download attachments
-                        
-                        # Check for QR codes in attachments
-                        if content_type == 'application/pdf' or content_type.startswith('image/'):
-                            # Implement code to check for QR codes in attachments
-
-                # Check for links in email content and capture screenshots
-                for link in links:
-                    # Implement code to capture screenshots of links
-                    pass
+                            # Extract HTML content from links
+                            html_content = extract_html_from_links(links)
+                            if html_content:
+                                # Detect QR codes in the HTML content
+                                result = detect_qr_code(html_content)
+                                print(result)
                 
     time.sleep(60)  # Check for new emails every minute
+
+# Close the IMAP connection
+mail.logout()
+
 
 # Close the IMAP connection
 mail.logout()
