@@ -1,0 +1,64 @@
+import imaplib
+import email
+import time
+import os
+from pyzbar.pyzbar import decode
+from PIL import Image
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+
+# Gmail IMAP configuration
+IMAP_SERVER = 'imap.gmail.com'
+EMAIL = 'your_email@gmail.com'
+PASSWORD = 'your_password'
+
+# Connect to Gmail
+mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+mail.login(EMAIL, PASSWORD)
+mail.select("inbox")
+
+while True:
+    # Search for unread emails
+    result, data = mail.search(None, 'UNSEEN')
+    
+    if result == 'OK':
+        for num in data[0].split():
+            # Fetch email by ID
+            result, email_data = mail.fetch(num, '(RFC822)')
+            
+            if result == 'OK':
+                raw_email = email_data[0][1]
+                msg = email.message_from_bytes(raw_email)
+                
+                # Check for text content and extract links
+                links = []
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            text = part.get_payload(decode=True).decode('utf-8')
+                            # Implement code to extract links from 'text' and add them to 'links' list
+
+                # Check for attachments
+                for part in msg.iter_attachments():
+                    filename = part.get_filename()
+                    content_type = part.get_content_type()
+                    
+                    # Download attachments
+                    if filename:
+                        # Implement code to download attachments
+                        
+                        # Check for QR codes in attachments
+                        if content_type == 'application/pdf' or content_type.startswith('image/'):
+                            # Implement code to check for QR codes in attachments
+
+                # Check for links in email content and capture screenshots
+                for link in links:
+                    # Implement code to capture screenshots of links
+                    pass
+                
+    time.sleep(60)  # Check for new emails every minute
+
+# Close the IMAP connection
+mail.logout()
