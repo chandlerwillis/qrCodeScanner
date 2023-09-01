@@ -37,8 +37,14 @@ def extract_html_from_links(links):
             # Fetch the HTML content of the linked webpage
             response = requests.get(link)
             if response.status_code == 200:
-                html_content = response.text
-                return html_content
+                # Try to decode using different encodings
+                encodings = ['utf-8', 'ISO-8859-1', 'windows-1252']
+                for encoding in encodings:
+                    try:
+                        html_content = response.content.decode(encoding)
+                        return html_content
+                    except UnicodeDecodeError:
+                        continue
         except Exception as e:
             print("Error:", e)
     return None
@@ -65,7 +71,10 @@ while True:
                 if msg.is_multipart():
                     for part in msg.walk():
                         if part.get_content_type() == "text/plain":
-                            text = part.get_payload(decode=True).decode('utf-8')
+                            try:
+                                text = part.get_payload(decode=True).decode('utf-8')
+                            except UnicodeDecodeError:
+                                text = part.get_payload(decode=True).decode('ISO-8859-1')
                             # Implement code to extract links from 'text'
                             links = []  # Placeholder for extracted links
                             # Extract links from 'text' and add them to 'links' list
@@ -78,10 +87,6 @@ while True:
                                 print(result)
                 
     time.sleep(60)  # Check for new emails every minute
-
-# Close the IMAP connection
-mail.logout()
-
 
 # Close the IMAP connection
 mail.logout()
