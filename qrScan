@@ -1,92 +1,127 @@
 import imaplib
 import email
-import requests
-import bs4
+import os
+from email.header import decode_header
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from PIL import Image
 from pyzbar.pyzbar import decode
+import shutil
+from pdf2image import convert_from_path
 
-# Gmail IMAP configuration
-IMAP_SERVER = 'imap.gmail.com'
-EMAIL = 'your_email@gmail.com'
-PASSWORD = 'your_password'
+# Function to connect to Gmail
+def connect_to_gmail(username, password):
+    # Connect to Gmail using IMAP
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail.login(username, password)
+    mail.select("inbox")
+    return mail
 
-# QR Code detection function
-def detect_qr_code(html_content):
-    # Parse the HTML content using BeautifulSoup
-    soup = bs4.BeautifulSoup(html_content, 'html.parser')
-    
-    # Find all the <img> tags in the HTML
-    img_tags = soup.find_all('img')
-    
-    # Iterate through <img> tags and try to decode QR codes
-    for img_tag in img_tags:
-        img_src = img_tag.get('src', '')
-        img_data = img_tag.get('alt', '')
-        
-        # Check if the image source or alt text contains a QR code
-        if 'data:image/png;base64' in img_src and img_data:
-            qr_code_data = decode([img_data])
-            if qr_code_data:
-                return "QR code found!"
-    
-    return "None"
+# Function to check for new emails
+def check_for_new_emails(mail):
+    result, data = mail.uid("search", None, "UNSEEN")
+    email_ids = data[0].split()
+    return email_ids
 
-# Extract HTML content from links function
-def extract_html_from_links(links):
-    for link in links:
-        try:
-            # Fetch the HTML content of the linked webpage
-            response = requests.get(link)
-            if response.status_code == 200:
-                # Try to decode using different encodings
-                encodings = ['utf-8', 'ISO-8859-1', 'windows-1252']
-                for encoding in encodings:
-                    try:
-                        html_content = response.content.decode(encoding)
-                        return html_content
-                    except UnicodeDecodeError:
-                        continue
-        except Exception as e:
-            print("Error:", e)
-    return None
+# Function to download attachments
+def download_attachments(mail, email_id):
+    result, message_data = mail.uid("fetch", email_id, "(RFC822)")
+    raw_email = message_data[0][1]
+    email_message = email.message_from_bytes(raw_email)
+    attachments = []
 
-# Connect to Gmail
-mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-mail.login(EMAIL, PASSWORD)
-mail.select("inbox")
+    for part in email_message.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        if part.get("Content-Disposition") is None:
+            continue
 
-while True:
-    # Search for unread emails
-    result, data = mail.search(None, 'UNSEEN')
-    
-    if result == 'OK':
-        for num in data[0].split():
-            # Fetch email by ID
-            result, email_data = mail.fetch(num, '(RFC822)')
-            
-            if result == 'OK':
-                raw_email = email_data[0][1]
-                msg = email.message_from_bytes(raw_email)
-                
-                # Check for text content and extract links
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            try:
-                                text = part.get_payload(decode=True).decode('utf-8')
-                            except UnicodeDecodeError:
-                                text = part.get_payload(decode=True).decode('ISO-8859-1')
-                            # Implement code to extract links from 'text'
-                            links = []  # Placeholder for extracted links
-                            # Extract links from 'text' and add them to 'links' list
+        filename = part.get_filename()
+        if filename:
+            filename = decode_header(filename)[0][0]
+            if isinstance(filename, bytes):
+                filename = filename.decode()
+            attachments.append((filename, part.get_payload(decode=True)))
 
-                            # Extract HTML content from links
-                            html_content = extract_html_from_links(links)
-                            if html_content:
-                                # Detect QR codes in the HTML content
-                                result = detect_qr_code(html_content)
-                                print(result)
-                
-    time.sleep(60)  # Check for new emails every minute
+    return attachments
 
-# Close the IMAP connection
-mail.logout()
+# Function to take a screenshot of a webpage
+def take_screenshot(url, output_path):
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run in headless mode (without GUI)
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.get(url)
+    driver.save_screenshot(output_path)
+    driver.quit()
+
+# Function to check for QR codes in images
+def check_for_qr_code(image_path):
+    image = Image.open(image_path)
+    decoded_objects = decode(image)
+    return decoded_objects
+
+# Function to convert PDF to images
+def convert_pdf_to_images(pdf_filename):
+    images = convert_from_path(pdf_filename)
+    return images
+
+# Function to create a folder if it doesn't exist
+def create_folder(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+# Function to delete a file
+def delete_file(file_path):
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+# Function to process emails
+def process_emails(username, password):
+    mail = connect_to_gmail(username, password)
+    email_ids = check_for_new_emails(mail)
+
+    for email_id in email_ids:
+        attachments = download_attachments(mail, email_id)
+        for filename, data in attachments:
+            file_extension = os.path.splitext(filename)[1].lower()
+            if file_extension in (".jpg", ".jpeg", ".png", ".pdf"):
+                with open(filename, "wb") as file:
+                    file.write(data)
+                if file_extension in (".jpg", ".jpeg", ".png"):
+                    qr_code_results = check_for_qr_code(filename)
+                    if qr_code_results:
+                        print(f"QR Code Found in {filename}")
+                    else:
+                        print(f"No QR Code Found in {filename}")
+                elif file_extension == ".pdf":
+                    pdf_images = convert_pdf_to_images(filename)
+                    for i, pdf_image in enumerate(pdf_images):
+                        pdf_image.save(f"{filename}_page_{i + 1}.jpg", "JPEG")
+                        qr_code_results = check_for_qr_code(f"{filename}_page_{i + 1}.jpg")
+                        if qr_code_results:
+                            print(f"QR Code Found in {filename}_page_{i + 1}.jpg")
+                        else:
+                            print(f"No QR Code Found in {filename}_page_{i + 1}.jpg")
+
+                # Assuming you want to save screenshots and attachments in separate folders
+                screenshot_folder = "screenshots"
+                attachment_folder = "attachments"
+                create_folder(screenshot_folder)
+                create_folder(attachment_folder)
+
+                if file_extension in (".jpg", ".jpeg", ".png"):
+                    screenshot_path = os.path.join(screenshot_folder, filename)
+                    shutil.move(filename, screenshot_path)
+                elif file_extension in (".pdf"):
+                    attachment_path = os.path.join(attachment_folder, filename)
+                    shutil.move(filename, attachment_path)
+
+                # Delete the file after processing
+                delete_file(filename)
+
+# Main function
+if __name__ == "__main__":
+    username = "your_email@gmail.com"
+    password = "your_password"
+    process_emails(username, password)
+
