@@ -9,7 +9,7 @@ from email.header import decode_header
 
 # Gmail configuration
 GMAIL_USERNAME = "chandlerwillis1999@gmail.com"
-GMAIL_PASSWORD = "gvlmltqjtbmrozxx"
+GMAIL_PASSWORD = "password"
 
 # Function to connect to Gmail and process the most recent email
 def connect_to_gmail_and_process_most_recent_email():
